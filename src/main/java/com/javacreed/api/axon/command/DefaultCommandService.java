@@ -6,8 +6,10 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 
 import org.axonframework.commandhandling.CommandCallback;
+import org.axonframework.commandhandling.CommandExecutionException;
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.GenericCommandMessage;
 import org.axonframework.commandhandling.gateway.CommandGateway;
@@ -39,18 +41,20 @@ public class DefaultCommandService implements CommandService {
     }
   }
 
-  private synchronized ActionReference linkCallback(final Callback callback) {
+  private ActionReference linkCallback(final Callback callback) {
     for (int i = 0; i < 1000; i++) {
       final ActionReference actionReference = ActionReference.random();
-      if (callbacks.containsKey(actionReference)) {
-        continue;
+      if (null == callbacks.putIfAbsent(actionReference, callback)) {
+        return actionReference;
       }
-
-      callbacks.put(actionReference, callback);
-      return actionReference;
     }
 
     throw new FailedToGenerateUniqueActionReferenceException();
+  }
+
+  @Override
+  public <C, R> void send(final C command, final CommandCallback<? super C, R> callback) {
+    commandGateway.send(command, callback);
   }
 
   @Override
@@ -97,5 +101,16 @@ public class DefaultCommandService implements CommandService {
     commandGateway.send(message, cc);
 
     return () -> callbacks.remove(actionReference);
+  }
+
+  @Override
+  public <C, R> R sendAndWait(final C command) throws NullPointerException, CommandExecutionException {
+    return commandGateway.sendAndWait(command);
+  }
+
+  @Override
+  public <C, R> R sendAndWait(final C command, final long timeout, final TimeUnit unit)
+      throws NullPointerException, CommandExecutionException {
+    return commandGateway.sendAndWait(command, timeout, unit);
   }
 }
